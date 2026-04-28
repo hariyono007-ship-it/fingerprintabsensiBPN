@@ -192,6 +192,67 @@ tr:last-child td{border-bottom:none}
 }
 .toast.show{transform:translateY(0);opacity:1}
 
+
+/* EDITABLE TIME CELL */
+.time-cell{
+  position:relative;cursor:pointer;display:inline-flex;align-items:center;
+  gap:5px;padding:2px 4px;border-radius:4px;transition:background .15s;min-width:48px
+}
+.time-cell:hover{background:rgba(255,122,0,.12)}
+.time-cell.has-val{color:var(--text);font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700}
+.time-cell.no-val{color:var(--muted);font-size:12px}
+.time-cell .edit-icon{font-size:9px;opacity:0;transition:opacity .15s;color:var(--orange)}
+.time-cell:hover .edit-icon{opacity:1}
+.time-cell.manual-override{border-bottom:2px solid var(--orange)}
+
+/* EDIT TIME MODAL */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:5000;
+  display:flex;align-items:center;justify-content:center;opacity:0;
+  transition:opacity .2s;pointer-events:none
+}
+.modal-overlay.show{opacity:1;pointer-events:all}
+.modal-box{
+  background:var(--surface);border:1px solid var(--border);border-radius:16px;
+  padding:24px;width:320px;box-shadow:0 20px 60px rgba(0,0,0,.6);
+  transform:translateY(20px);transition:transform .2s
+}
+.modal-overlay.show .modal-box{transform:translateY(0)}
+.modal-title{
+  font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:800;
+  color:var(--orange);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px
+}
+.modal-sub{font-size:11px;color:var(--muted);margin-bottom:18px}
+.modal-row{display:flex;gap:10px;margin-bottom:14px}
+.modal-field{flex:1}
+.modal-field label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:5px}
+.modal-field input[type=time]{
+  width:100%;background:var(--surface2);border:1px solid var(--border);
+  color:var(--text);padding:8px 10px;border-radius:8px;font-size:14px;
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;
+  transition:border-color .2s;cursor:pointer
+}
+.modal-field input[type=time]:focus{outline:none;border-color:var(--orange)}
+.modal-clear{
+  font-size:10px;color:var(--muted);cursor:pointer;text-decoration:underline;
+  background:none;border:none;padding:0;margin-top:3px;display:block
+}
+.modal-clear:hover{color:var(--red)}
+.modal-actions{display:flex;gap:8px;margin-top:18px}
+.modal-btn{
+  flex:1;padding:9px;border-radius:8px;font-family:'Barlow Condensed',sans-serif;
+  font-weight:700;font-size:13px;letter-spacing:1px;cursor:pointer;border:none;
+  text-transform:uppercase;transition:opacity .2s
+}
+.modal-btn.primary{background:linear-gradient(135deg,var(--orange),var(--ora-l));color:#000}
+.modal-btn.cancel{background:var(--surface2);border:1px solid var(--border);color:var(--muted)}
+.modal-btn:hover{opacity:.85}
+.manual-badge{
+  font-size:8px;background:rgba(255,122,0,.15);color:var(--orange);
+  border:1px solid rgba(255,122,0,.3);padding:1px 4px;border-radius:8px;
+  vertical-align:middle;margin-left:3px
+}
+
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:var(--surface)}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
@@ -353,6 +414,31 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
+
+<!-- EDIT TIME MODAL -->
+<div class="modal-overlay" id="editTimeModal">
+  <div class="modal-box">
+    <div class="modal-title" id="editModalTitle">Edit Jam Presensi</div>
+    <div class="modal-sub" id="editModalSub">Loading...</div>
+    <div class="modal-row">
+      <div class="modal-field">
+        <label>⏰ Jam Masuk</label>
+        <input type="time" id="editInTime" step="60">
+        <button class="modal-clear" onclick="clearModalField('in')">✕ Kosongkan</button>
+      </div>
+      <div class="modal-field">
+        <label>🏠 Jam Pulang</label>
+        <input type="time" id="editOutTime" step="60">
+        <button class="modal-clear" onclick="clearModalField('out')">✕ Kosongkan</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn cancel" onclick="closeEditModal()">Batal</button>
+      <button class="modal-btn primary" onclick="saveEditModal()">💾 Simpan</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -373,6 +459,7 @@ let replaceMode = false;
 // ===================== INIT =====================
 function init(){
   loadData();
+  applyOverrides();
   populateDates();
   updateBadges();
   render('all');
@@ -439,6 +526,7 @@ function clearAllData(){
   if(!confirm('Hapus semua data tersimpan dan kembali ke data default?')) return;
   localStorage.removeItem(LS_KEY);
   localStorage.removeItem(LS_KET);
+  localStorage.removeItem(LS_OVERRIDE);
   [1,2].forEach(n => {
     const slot = document.getElementById('slot'+n);
     slot.classList.remove('has-file');
@@ -497,6 +585,8 @@ function handleUpload(event, slotNum){
         mergeEmployees(parsed.employees, parsed.dates);
       }
       setSlotLoaded(slotNum, file.name);
+      // Apply manual overrides on top of uploaded data
+      applyOverrides();
       // Auto-save after upload
       saveSlotMeta(slotNum, file.name);
       updatePeriod(); populateDates(); updateBadges(); render(activeTab);
@@ -831,9 +921,23 @@ function renderTable(rows,sfx,pg){
       <td style="font-weight:500">${r.emp.name}</td>
       <td><span class="badge b-grp">${gLbl[r.emp.group]||r.emp.group}</span></td>
       <td style="color:var(--muted)">${r.att.date}</td>
-      <td style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700">${r.att.in||'–'}</td>
+      <td>
+        <span class="time-cell ${r.att.in?'has-val':'no-val'} ${getManualOverride(r.emp.reg,r.att.date,'in')?'manual-override':''}" 
+              onclick="openEditModal('${r.emp.reg}','${r.att.date}')">
+          ${r.att.in||'–'}
+          ${getManualOverride(r.emp.reg,r.att.date,'in')?'<span class=\'manual-badge\'>M</span>':''}
+          <span class="edit-icon">✏</span>
+        </span>
+      </td>
       <td><span class="badge ${iCls}">${r.iS}</span></td>
-      <td style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700">${r.att.out||'–'}</td>
+      <td>
+        <span class="time-cell ${r.att.out?'has-val':'no-val'} ${getManualOverride(r.emp.reg,r.att.date,'out')?'manual-override':''}" 
+              onclick="openEditModal('${r.emp.reg}','${r.att.date}')">
+          ${r.att.out||'–'}
+          ${getManualOverride(r.emp.reg,r.att.date,'out')?'<span class=\'manual-badge\'>M</span>':''}
+          <span class="edit-icon">✏</span>
+        </span>
+      </td>
       <td>${r.oS?'<span class="badge '+oCls+'">'+r.oS+'</span>':'<span style="color:var(--muted)">–</span>'}</td>
       <td>
         <select class="ket-sel" onchange="saveKet('${r.emp.reg}','${r.att.date}',this.value)">
@@ -912,6 +1016,92 @@ function showToast(msg){
   t.textContent=msg; t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),3000);
 }
+
+
+// ===================== MANUAL OVERRIDE (LocalStorage) =====================
+const LS_OVERRIDE = 'jpc_time_override_v3';
+
+function loadOverrides(){
+  try{ return JSON.parse(localStorage.getItem(LS_OVERRIDE)||'{}'); }catch(e){ return {}; }
+}
+function saveOverride(reg,date,inVal,outVal){
+  const d=loadOverrides();
+  const key=reg+'|'+date;
+  if(inVal===undefined && outVal===undefined){ delete d[key]; }
+  else { d[key]={in:inVal!==undefined?inVal:null, out:outVal!==undefined?outVal:null}; }
+  localStorage.setItem(LS_OVERRIDE,JSON.stringify(d));
+}
+function getManualOverride(reg,date,field){
+  const d=loadOverrides();
+  const key=reg+'|'+date;
+  return d[key] && d[key][field]!==undefined && d[key][field]!==null;
+}
+function applyOverrides(){
+  const overrides=loadOverrides();
+  employees.forEach(emp=>{
+    emp.attendance.forEach(a=>{
+      const key=emp.reg+'|'+a.date;
+      if(overrides[key]){
+        if(overrides[key].in!==null && overrides[key].in!==undefined) a.in=overrides[key].in;
+        if(overrides[key].out!==null && overrides[key].out!==undefined) a.out=overrides[key].out;
+      }
+    });
+  });
+}
+
+// ===================== EDIT TIME MODAL =====================
+let _editReg='',_editDate='';
+
+function openEditModal(reg,date){
+  _editReg=reg; _editDate=date;
+  const emp=employees.find(e=>e.reg===reg);
+  if(!emp) return;
+  const att=emp.attendance.find(a=>a.date===date)||{in:null,out:null};
+  document.getElementById('editModalTitle').textContent='Edit Jam Presensi';
+  document.getElementById('editModalSub').textContent=emp.name+' · '+date;
+  document.getElementById('editInTime').value=att.in||'';
+  document.getElementById('editOutTime').value=att.out||'';
+  document.getElementById('editTimeModal').classList.add('show');
+}
+function closeEditModal(){
+  document.getElementById('editTimeModal').classList.remove('show');
+}
+function clearModalField(field){
+  document.getElementById('edit'+(field==='in'?'In':'Out')+'Time').value='';
+}
+function saveEditModal(){
+  const inVal=document.getElementById('editInTime').value||null;
+  const outVal=document.getElementById('editOutTime').value||null;
+  // Validate HH:MM format
+  const valid=/^([01]?\d|2[0-3]):[0-5]\d$/;
+  if(inVal && !valid.test(inVal)){ showToast('⚠️ Format jam masuk tidak valid (HH:MM)'); return; }
+  if(outVal && !valid.test(outVal)){ showToast('⚠️ Format jam pulang tidak valid (HH:MM)'); return; }
+  // Update in-memory
+  const emp=employees.find(e=>e.reg===_editReg);
+  if(!emp){ closeEditModal(); return; }
+  let att=emp.attendance.find(a=>a.date===_editDate);
+  if(!att){
+    att={date:_editDate,in:null,out:null};
+    emp.attendance.push(att);
+    // Also ensure date is in allDates
+    if(!allDates.includes(_editDate)){ allDates.push(_editDate); allDates.sort((a,b)=>{const pa=a.split('/'),pb=b.split('/'); return new Date(pa[2],pa[1]-1,pa[0])-new Date(pb[2],pb[1]-1,pb[0]);}); populateDates(); }
+  }
+  att.in=inVal;
+  att.out=outVal;
+  // Save override record
+  saveOverride(_editReg,_editDate,inVal,outVal);
+  closeEditModal();
+  render(activeTab);
+  showToast('✅ Jam presensi '+(emp.name.split(' ')[0])+' '+_editDate+' berhasil diupdate');
+}
+// Close modal on overlay click
+document.addEventListener('click',function(e){
+  if(e.target.id==='editTimeModal') closeEditModal();
+});
+// Close modal on Escape
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape') closeEditModal();
+});
 
 // ===================== START =====================
 init();
