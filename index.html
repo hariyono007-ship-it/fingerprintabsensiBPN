@@ -921,23 +921,9 @@ function renderTable(rows,sfx,pg){
       <td style="font-weight:500">${r.emp.name}</td>
       <td><span class="badge b-grp">${gLbl[r.emp.group]||r.emp.group}</span></td>
       <td style="color:var(--muted)">${r.att.date}</td>
-      <td>
-        <span class="time-cell ${r.att.in?'has-val':'no-val'} ${getManualOverride(r.emp.reg,r.att.date,'in')?'manual-override':''}" 
-              onclick="openEditModal('${r.emp.reg}','${r.att.date}')">
-          ${r.att.in||'–'}
-          ${getManualOverride(r.emp.reg,r.att.date,'in')?'<span class=\'manual-badge\'>M</span>':''}
-          <span class="edit-icon">✏</span>
-        </span>
-      </td>
+      <td>${renderTimeCell(r.emp.reg,r.att.date,'in',r.att.in)}</td>
       <td><span class="badge ${iCls}">${r.iS}</span></td>
-      <td>
-        <span class="time-cell ${r.att.out?'has-val':'no-val'} ${getManualOverride(r.emp.reg,r.att.date,'out')?'manual-override':''}" 
-              onclick="openEditModal('${r.emp.reg}','${r.att.date}')">
-          ${r.att.out||'–'}
-          ${getManualOverride(r.emp.reg,r.att.date,'out')?'<span class=\'manual-badge\'>M</span>':''}
-          <span class="edit-icon">✏</span>
-        </span>
-      </td>
+      <td>${renderTimeCell(r.emp.reg,r.att.date,'out',r.att.out)}</td>
       <td>${r.oS?'<span class="badge '+oCls+'">'+r.oS+'</span>':'<span style="color:var(--muted)">–</span>'}</td>
       <td>
         <select class="ket-sel" onchange="saveKet('${r.emp.reg}','${r.att.date}',this.value)">
@@ -1047,6 +1033,20 @@ function applyOverrides(){
       }
     });
   });
+}
+
+
+// ===================== RENDER TIME CELL =====================
+function renderTimeCell(reg, date, field, val) {
+  var hasVal = val ? 'has-val' : 'no-val';
+  var isManual = getManualOverride(reg, date, field);
+  var overrideCls = isManual ? ' manual-override' : '';
+  var manualBadge = isManual ? '<span class="manual-badge">M</span>' : '';
+  var display = val || '–';
+  return '<span class="time-cell ' + hasVal + overrideCls + '" onclick="openEditModal(\'' + reg + '\',\'' + date + '\')">'
+       + display + manualBadge
+       + '<span class="edit-icon">&#9998;</span>'
+       + '</span>';
 }
 
 // ===================== EDIT TIME MODAL =====================
